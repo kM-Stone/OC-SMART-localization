@@ -1,0 +1,19 @@
+# data
+*.nc
+*.hdf
+*.h5
+*.zip
+*.pdf
+
+# folder
+__pycache__
+anc
+auxdata
+DataDownloadAuthentication
+GEO
+L1B
+L2
+
+*.log
+*.txt
+*.jpg
