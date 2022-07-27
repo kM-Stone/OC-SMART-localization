@@ -119,8 +119,7 @@ print('{} files found in the level 1 directory. \n'.format(nfiles))
 aux=AUXData()
 
 #%% #NOTE start processing all files
-# for ifile in np.arange(nfiles):
-for ifile in [1]:
+for ifile in np.arange(nfiles):
     fname = L1files[ifile]
     t_start = time.time()
     print('Processing file {}  {}'.format(ifile + 1, fname))
