@@ -240,12 +240,12 @@ class ANCILLARY(object):
             dt=(datetime.strptime(self.datestr[0:8]+'000000','%Y%m%d%H%M%S')-timedelta(days=1)).timetuple()
             self.oz1_name='N'+str(dt.tm_year)+'{:03d}'.format(dt.tm_yday)+'00'+oz_postfix
             self.oz2_name='N'+self.datestr[0:4]+'{:03d}'.format(self.doy)+'00'+oz_postfix
-            self.ozdt=(self.l1btime-(datetime.strptime(self.datestr[0:8]+'000000','%Y%m%d%H%M%S').timestamp()-12*3600))/3600/24 # 到前一天mid-day的距离(>0)， 用于插值。为什么不用00：00作为标准？？
+            self.ozdt=(self.l1btime-(datetime.strptime(self.datestr[0:8]+'000000','%Y%m%d%H%M%S').timestamp()-12*3600))/3600/24 # 到前一天mid-day的距离(>0),  用于插值。为什么不用00：00作为标准？？
         else:
             dt=(datetime.strptime(self.datestr[0:8]+'000000','%Y%m%d%H%M%S')+timedelta(days=1)).timetuple()
             self.oz1_name='N'+self.datestr[0:4]+'{:03d}'.format(self.doy)+'00'+oz_postfix
             self.oz2_name='N'+str(dt.tm_year)+'{:03d}'.format(dt.tm_yday)+'00'+oz_postfix
-            self.ozdt=(self.l1btime-datetime.strptime(self.datestr[0:8]+'120000','%Y%m%d%H%M%S').timestamp())/3600/24 # 到当天mid-day的距离，用于插值
+            self.ozdt=(self.l1btime-datetime.strptime(self.datestr[0:8]+'120000','%Y%m%d%H%M%S').timestamp())/3600/24 # 到当天mid-day的距离, 用于插值
 
         if(int(self.datestr[8:14])<=60000): #before 06:00
             self.met1_name='N'+self.datestr[0:4]+'{:03d}'.format(self.doy)+'00'+met_postfix
@@ -453,6 +453,42 @@ class ANCILLARY(object):
 #            except urllib.error.HTTPError as e:
 #                print('Server could\'t fulfill the request. Reason: ', e.reason)
 #        print('Download finished in {:0.2f} seconds.\n'.format(time.time()-t))
+    def CRA_met_prepare(self):
+        '''
+        CRA气象数据准备, 对于一个时刻的卫星数据, 需要准备该时刻前后相邻的两个时次数据, 然后进行插值
+        '''
+        met_postfix = '_6h.nc'
+        self.l1btime = datetime.strptime(self.datestr, '%Y%m%d%H%M%S').timestamp()
+
+        if (int(self.datestr[8:14]) <= 60000):  #before 06:00
+            self.met1_name = 'CRA' + self.datestr[0:8] + '00' + met_postfix
+            self.met2_name = 'CRA' + self.datestr[0:8] + '06' + met_postfix
+            self.metdt = (self.l1btime - datetime.strptime(
+                self.datestr[0:8] + '000000', '%Y%m%d%H%M%S').timestamp()
+                        ) / 3600 / 24 / 0.25  # 权重设置, 单位为6h（气象资料的时间分辨率）
+
+        elif (int(self.datestr[8:14]) <= 120000):  #before 12:00
+            self.met1_name = 'CRA' + self.datestr[0:8] + '06' + met_postfix
+            self.met2_name = 'CRA' + self.datestr[0:8] + '12' + met_postfix
+            self.metdt = (self.l1btime - datetime.strptime(
+                self.datestr[0:8] + '060000',
+                '%Y%m%d%H%M%S').timestamp()) / 3600 / 24 / 0.25
+
+        elif (int(self.datestr[8:14]) <= 180000):  #before 18:00
+            self.met1_name = 'CRA' + self.datestr[0:8] + '12' + met_postfix
+            self.met2_name = 'CRA' + self.datestr[0:8] + '18' + met_postfix
+            self.metdt = (self.l1btime - datetime.strptime(
+                self.datestr[0:8] + '120000',
+                '%Y%m%d%H%M%S').timestamp()) / 3600 / 24 / 0.25
+
+        else:  #after 18:00
+            dt = (datetime.strptime(self.datestr[0:8] + '000000', '%Y%m%d%H%M%S') +
+                timedelta(days=1)).timetuple()
+            self.met1_name = 'CRA' + self.datestr[0:8] + '18' + met_postfix
+            self.met2_name = 'CRA' + f'{dt.tm_year}' + f'{dt.tm_mon:02d}' + f'{dt.tm_mday:02d}' + '00' + met_postfix
+            self.metdt = (self.l1btime - datetime.strptime(
+                self.datestr[0:8] + '180000',
+                '%Y%m%d%H%M%S').timestamp()) / 3600 / 24 / 0.25
 
     def read_ozone(self):
         print('Reading Ozone data ...')
@@ -467,7 +503,7 @@ class ANCILLARY(object):
             ozone1 = f1.select('ozone_mean_'+'{:03d}'.format(self.doy))[:,:]*0.001
         elif 'OMI' in self.oz1_name:
             f1 = SD(self.path+self.oz1_name,SDC.READ)
-            ozone1 = f1.select('ozone')[:,:]*0.001  # NOTE O3的单位，原始数据是Dobson Units
+            ozone1 = f1.select('ozone')[:,:]*0.001  # NOTE O3的单位, 原始数据是Dobson Units
         elif 'TOMS' in self.oz1_name:
             f1 = SD(self.path+self.oz1_name,SDC.READ)
             data = f1.select('ozone')[:,:]*0.001
@@ -560,6 +596,35 @@ class ANCILLARY(object):
         self.rhmap[0, :] = self.rhmap[1, :]
         self.rhmap[met_nline - 1, :] = self.rhmap[met_nline - 2, :]
 
+    def read_CRA(self):
+        print('Reading Ozone, windspeed, pressure and RH data from CRA ...')
+        f1 = Dataset(self.path + self.met1_name)
+        f2 = Dataset(self.path + self.met2_name)
+
+        ozone1 = np.array(f1.variables['tozne'][:, :]) * 0.001
+        ozone2 = np.array(f2.variables['tozne'][:, :]) * 0.001
+
+        ws1 = np.array(f1.variables['ws'][:, :])
+        ws2 = np.array(f2.variables['ws'][:, :])
+
+        # 海平面气压和地面气压都试试
+        press1 = np.array(f1.variables['sp'][:, :])
+        press2 = np.array(f2.variables['sp'][:, :])
+
+        rh1 = np.array(f1.variables['r2'][:, :])
+        rh2 = np.array(f2.variables['r2'][:, :])
+
+        self.met_lat = np.array(f1['latitude'][:])
+        self.met_lon = np.array(f1['longitude'][:])
+
+        self.oz_lat = np.array(f1['latitude'][:])
+        self.oz_lon = np.array(f1['longitude'][:])
+
+        self.ozmap = ozone1 * (1 - self.metdt) + ozone2 * self.metdt
+        self.wsmap = ws1 * (1 - self.metdt) + ws2 * self.metdt
+        self.pressmap = press1 * (1 - self.metdt) + press2 * self.metdt
+        self.rhmap = rh1 * (1 - self.metdt) + rh2 * self.metdt
+
 
     def trans_ozone(self, k_oz, l1b_lat, l1b_lon, l1b_solz, l1b_senz):
         # interpolate ozone map to the L1B grid and compute transmittance
@@ -568,7 +633,7 @@ class ANCILLARY(object):
         func=interpolate.RegularGridInterpolator((np.flip(self.oz_lat),self.oz_lon),np.flip(self.ozmap,0))  # NOTE 注意数据网格的方向
         l1b_oz=func(np.array([l1b_lat,l1b_lon]).transpose()) # 输入的经纬度为1维的点
         self.l1b_oz=l1b_oz
-        tg_sol=np.exp(np.matmul(np.expand_dims(-l1b_oz/np.cos(np.deg2rad(l1b_solz)), 1),[k_oz]))  # -l1b_oz/np.cos(np.deg2rad(l1b_solz)) 在axis=1上新增维度， 数据变为（n, 1）列向量, k_oz本身是行向量(m,)， 得到矩阵(n, m), 每列代表一个波段
+        tg_sol=np.exp(np.matmul(np.expand_dims(-l1b_oz/np.cos(np.deg2rad(l1b_solz)), 1),[k_oz]))  # -l1b_oz/np.cos(np.deg2rad(l1b_solz)) 在axis=1上新增维度,  数据变为（n, 1）列向量, k_oz本身是行向量(m,),  得到矩阵(n, m), 每列代表一个波段
         tg_sen=np.exp(np.matmul(np.expand_dims(-l1b_oz/np.cos(np.deg2rad(l1b_senz)), 1),[k_oz]))
         return tg_sol, tg_sen
 

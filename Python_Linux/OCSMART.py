@@ -53,6 +53,11 @@ if 'l2_path' in input_param.keys():
 else:
     print('Warning: L2 data directory not specified, using default L2 data directory: ./L2/')
     L2_path = './L2/'
+
+if 'CRA_met' in input_param.keys() and input_param['CRA_met'].upper() == 'TRUE':
+    CRA = True
+else:
+    CRA = False
 ####################################################
 
 #######  parameter setup  ##########################
@@ -119,7 +124,8 @@ print('{} files found in the level 1 directory. \n'.format(nfiles))
 aux=AUXData()
 
 #%% #NOTE start processing all files
-for ifile in np.arange(nfiles):
+# for ifile in np.arange(nfiles):
+for ifile in [1]:
     fname = L1files[ifile]
     t_start = time.time()
     print('Processing file {}  {}'.format(ifile + 1, fname))
@@ -163,10 +169,16 @@ for ifile in np.arange(nfiles):
 
                 # NOTE check ancillary files and download from NASA if needed
                 anc = ANCILLARY(sensorinfo=sinfo, L1Bname=L1_path + fname)
-                anc.download()
-                anc.read_no2()
-                anc.read_ozone()
-                anc.read_met()
+
+                if CRA: # 使用本地CRA数据
+                    anc.CRA_met_prepare()
+                    anc.read_CRA()
+                else:
+                    anc.download()
+                    anc.read_ozone()
+                    anc.read_met()
+
+                anc.read_no2()  # no2 数据维持源代码使用的数据
 
                 #read Rayleigh table
                 ray = Rayleigh(info=sinfo)
@@ -244,7 +256,7 @@ for ifile in np.arange(nfiles):
 
                 # mask invalid radiances data
                 mask_valid = (np.sum(l1b.reflectance <= 0.0, 2) == 0)  # valid的数据应该是每个波段都 > 0?
-                l2_mask[~mask_valid] = 1
+                l2_mask[~mask_valid] = 1  # 1 代表反射率数值错误
 
                 # mask high solar and sensor zenith angels
                 if sinfo.sensor == 'EPIC':
@@ -301,9 +313,7 @@ for ifile in np.arange(nfiles):
                 ]:
                     mask_water = l1b.landmask == 0
                     mask_nwater = ~mask_water
-                # NOTE 测试 mask
-                plt.pcolormesh(water_portion)
-                plt.savefig('./water_portion.jpg')
+
                 # Sentinel-2, Landsat-8 and GOCI images are too large, set block processing anyways
                 if sinfo.sensor in ['OLI', 'S2A', 'S2B', 'GOCI']:
                     block_size = 2500
@@ -514,11 +524,13 @@ for ifile in np.arange(nfiles):
                         rrs[mask_valid_geo_water_lrcposi_nocloud, :])
 
                 # write L2 file in H5 format
-                print('Writing level 2 file {} ... '.format(
-                    os.path.splitext(fname)[0] + '_L2_OCSMART.h5'))
-                hf = h5py.File(
-                    L2_path + os.path.splitext(fname)[0] + '_L2_OCSMART.h5',
-                    'w')
+                if CRA:
+                    save_file_name = 'CRA_' + os.path.splitext(fname)[0] + '_L2_OCSMART.h5'
+                else:
+                    save_file_name = os.path.splitext(fname)[0] + '_L2_OCSMART.h5'
+
+                print('Writing level 2 file {} ... '.format(save_file_name))
+                hf = h5py.File(L2_path + save_file_name, 'w')
                 hf.create_dataset('Latitude',
                                   dtype='float32',
                                   data=l1b.latitude,
