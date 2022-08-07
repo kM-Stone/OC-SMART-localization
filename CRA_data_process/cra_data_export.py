@@ -1,10 +1,10 @@
 '''
 Author: yshi
 Date: 2022-07-26 10:37:21
-LastEditTime: 2022-07-27 14:49:07
+LastEditTime: 2022-08-03 17:06:16
 LastEditors: Please set LastEditors
 Description: 从原始CRA40数据文件中提取并整合所需变量
-FilePath: /yshi/oc-smar_localization/CRA_data_process/cra_data_export.py
+FilePath: /yshi/oc-smart_localization/CRA_data_process/cra_data_export.py
 '''
 
 #%%
@@ -30,12 +30,12 @@ class CRADataExport():
         self.file_single = DATA_PATH + f'CRA40_SINGLE_{file_time}_GLB_0P25_HOUR_V1_0_0.grib2'
         self.file_singlea = DATA_PATH + f'CRA40_SINGLEA_{file_time}_GLB_0P25_HOUR_V1_1_2.grib2'
         if lat_range == None:
-            self.lat_range = (65., 15.)
+            self.lat_range = (90., -90.)
         else:
             self.lat_range = lat_range
 
         if lon_range == None:
-            self.lon_range = (70., 150.)
+            self.lon_range = (0, 360.)  # 注意原数据的经度格式
         else:
             self.lon_range = lon_range
 
@@ -52,14 +52,23 @@ class CRADataExport():
 
     def met_merge(self):
         '''变量提取与合并'''
-
-        pres = self.read_grib_variable(self.file_single,
+        # surface pressure
+        sp = self.read_grib_variable(self.file_single,
                                        typeOfLevel='surface',
                                        paramId=134)['sp']
-        pres/=100
-        pres.attrs['units'] = 'hPa'
-        pres = pres.drop_vars(['valid_time', 'step', 'surface'])
+        sp /= 100
+        sp.attrs['units'] = 'hPa'
+        sp = sp.drop_vars(['valid_time', 'step', 'surface'])
 
+        # air pressure at meansea level
+        msl = self.read_grib_variable(self.file_single,
+                                       typeOfLevel='meanSea',
+                                       paramId=151)['msl']
+        msl /= 100
+        msl.attrs['units'] = 'hPa'
+        msl = msl.drop_vars(['valid_time', 'step', 'meanSea'])
+        
+        # total ozone
         ozone = self.read_grib_variable(self.file_single,
                                         typeOfLevel='unknown',
                                         paramId=260130)['tozne']
@@ -75,36 +84,49 @@ class CRADataExport():
                                        typeOfLevel='heightAboveGround',
                                        level=10)
         wind = wind.drop_vars(['valid_time', 'step', 'heightAboveGround'])
-        ws = np.sqrt(wind['u10']**2 + wind['v10']**2) 
+        ws = np.sqrt(wind['u10']**2 + wind['v10']**2)
         ws.name = 'ws'
-        ws.attrs = {'long_name': '10 m wind speed', 'units':'m/s'}
-        
-        self.dataset = xr.merge([pres, ozone, rh2, ws])
+        ws.attrs = {'long_name': '10 m wind speed', 'units': 'm/s'}
+
+        self.dataset = xr.merge([sp, ozone, rh2, ws, msl])
+        self.dataset = longitude_proc(self.dataset)
         self.dataset.attrs = {}
+
         logging.info(f'{self.file_time} 变量提取合并完成')
 
     def file_save(self, save_dir):
-        self.dataset.to_netcdf(save_dir + f'CRA{self.file_time}.nc')
+        self.dataset.to_netcdf(save_dir + f'CRA{self.file_time}_6h.nc')
         logging.info(f'{self.file_time} 文件已保存')
 
+
+def longitude_proc(ds):
+    ds['longitude'] = xr.where(ds['longitude'] > 180, ds['longitude'] - 360,
+                               ds['longitude'])
+    ds = ds.sel(longitude=sorted(ds['longitude']))
+        
+    return ds
 
 # %%
 if __name__ == '__main__':
     from glob import glob
     import re
-    from multiprocessing.dummy import Pool
+    from multiprocessing import Pool
+    
+    def error_print(error_msg):
+        logging.error(error_msg)
 
     def data_process(timestr):
         data_export = CRADataExport(timestr)
         data_export.met_merge()
         data_export.file_save(
-            save_dir='/home/yshi/oc-smar_localization/Python_Linux/anc/')
+            save_dir='/home/yshi/oc-smart_localization/Python_Linux/anc/')
 
     timelist = map(lambda x: re.findall(r'\d{10}', x)[0],
                    glob(DATA_PATH + '*SINGLE*.grib2'))
+    # log_to_stderr()
+    pool = Pool(processes=8)
     
-    pool = Pool(processes=6)
     for timestr in timelist:
-        pool.apply_async(data_process, args=(timestr,))
+        pool.apply_async(data_process, args=(timestr, ), error_callback=error_print)
     pool.close()
     pool.join()
