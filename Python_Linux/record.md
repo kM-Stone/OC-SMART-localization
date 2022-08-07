@@ -16,7 +16,8 @@
 guide上的python3.6.6版本有点老, 可以尝试建立环境时只指定3.6版本
 import gdal 改为 from osgeo import gdal
 
-3. 为了支持CRA40数据， 还需安装 xarray 和 cfgrib库
+3. 为了方便读取CRA40数据， 还需安装 xarray 和 cfgrib库； 只是为了提前处理CRA数据，OC-SMART程序主体不需要这两个库（不过统一使用xarray接口会更加方便）
+4. xarray 读取HDF5 还需安装h5netcdf库
 
 ## 框架
 1. 参数设置: I/O路径, 传感器识别
@@ -24,7 +25,7 @@ import gdal 改为 from osgeo import gdal
    + land_mask设置
 3. sensorinfo.py: 根据L1数据识别并从sensorinfo文件夹读取传感器信息（7列）
 4. 读取geo数据(经纬度信息)
-5. 读取l1b数据，主要是计算可见各波段的reflectance
+5. 读取l1b数据，主要是计算可见各波段的TOA reflectance, 即$L_t(\lambda)$
 6. 读取ancillary数据
    + 根据L1B数据解码时间信息, 构造该数据起止时刻的中间时刻
    + 下载该时刻前后两个时刻可获得的数据， 然后插值到该时刻上；如下载不到数据则使用气候态

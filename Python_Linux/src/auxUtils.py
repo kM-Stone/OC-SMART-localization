@@ -58,14 +58,14 @@ class AUXData(object):
         water_frac=np.zeros(npixl)
         landmask_dxdy=self.landmask_lon[1]-self.landmask_lon[0]
         mask_hsize=int(l1b_dxdy/landmask_dxdy/2)+1 
-        if mask_hsize>1:
+        if mask_hsize>1: # l1b网格过大, 进行子网格平均
             for i in range(npixl):
                 tp=np.where(self.landmask_lat<l1b_lat[i])[-1][-1]-mask_hsize+1
                 bm=tp+2*mask_hsize
                 lt=np.where(self.landmask_lon<l1b_lon[i])[-1][-1]-mask_hsize+1
                 rt=lt+2*mask_hsize
                 water_frac[i]=np.mean(self.landmask[tp:bm,lt:rt])
-        else:  
+        else:  # l1b网格较小, 直接进行插值
             func=interpolate.RegularGridInterpolator((self.landmask_lat,self.landmask_lon),self.landmask)
             water_frac=func(np.array([l1b_lat,l1b_lon]).transpose())
             
